@@ -104,20 +104,22 @@ namespace LibreHardwareMonitor.Utilities
             {
                 using (StreamWriter writer = new StreamWriter(new FileStream(_fileName, FileMode.Append, FileAccess.Write, FileShare.ReadWrite)))
                 {
-                    writer.Write($"{{\"time\":\"{DateTimeOffset.UtcNow.ToString("u")}\"");
-                    foreach (var sensor in _sensors)
+                    foreach (var hardware in _sensors.GroupBy(s => s.Hardware))
                     {
-                        writer.Write($",\"{sensor.Identifier}\":");
-                        if (sensor != null && sensor.Value.HasValue)
+                        writer.Write($"{{\"time\":\"{DateTimeOffset.UtcNow.ToString("u")}\"");
+                        writer.Write($",\"hardware.type\":\"{hardware.Key.HardwareType}\"");
+                        writer.Write($",\"hardware.id\":\"{hardware.Key.Identifier}\"");
+                        writer.Write($",\"hardware.name\":\"{hardware.Key.Name}\"");
+                        foreach (var sensor in hardware)
                         {
-                            writer.Write(sensor.Value.Value.ToString("R", CultureInfo.InvariantCulture));
+                            if (sensor != null && sensor.Value.HasValue)
+                            {
+                                writer.Write($",\"sensor.{sensor.SensorType}.{sensor.Name}\":");
+                                writer.Write(sensor.Value.Value.ToString("R", CultureInfo.InvariantCulture));
+                            }
                         }
-                        else
-                        {
-                            writer.Write("null");
-                        }
+                        writer.WriteLine("}");
                     }
-                    writer.WriteLine("}");
                 }
             }
             catch (IOException) { }
