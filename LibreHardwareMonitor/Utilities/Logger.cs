@@ -15,14 +15,13 @@ namespace LibreHardwareMonitor.Utilities
 {
     public class Logger
     {
-        private const string FileNameFormat = "LibreHardwareMonitorLog-{0:yyyy-MM-dd}.csv";
+        private const string FileNameFormat = "LibreHardwareMonitorLog-{0:yyyy-MM-dd}.json";
 
         private readonly IComputer _computer;
 
         private DateTime _day = DateTime.MinValue;
         private string _fileName;
-        private string[] _identifiers;
-        private ISensor[] _sensors;
+        private List<ISensor> _sensors = new List<ISensor>();
         private DateTime _lastLoggedTime = DateTime.MinValue;
 
         public Logger(IComputer computer)
@@ -58,26 +57,12 @@ namespace LibreHardwareMonitor.Utilities
 
         private void SensorAdded(ISensor sensor)
         {
-            if (_sensors == null)
-                return;
-
-            for (int i = 0; i < _sensors.Length; i++)
-            {
-                if (sensor.Identifier.ToString() == _identifiers[i])
-                    _sensors[i] = sensor;
-            }
+            _sensors.Add(sensor);
         }
 
         private void SensorRemoved(ISensor sensor)
         {
-            if (_sensors == null)
-                return;
-
-            for (int i = 0; i < _sensors.Length; i++)
-            {
-                if (sensor == _sensors[i])
-                    _sensors[i] = null;
-            }
+            _sensors.Remove(sensor);
         }
 
         private static string GetFileName(DateTime date)
@@ -87,77 +72,13 @@ namespace LibreHardwareMonitor.Utilities
 
         private bool OpenExistingLogFile()
         {
-            if (!File.Exists(_fileName))
-                return false;
-
-            try
-            {
-                string line;
-                using (StreamReader reader = new StreamReader(_fileName))
-                    line = reader.ReadLine();
-
-                if (string.IsNullOrEmpty(line))
-                    return false;
-
-                _identifiers = line.Split(',').Skip(1).ToArray();
-            }
-            catch
-            {
-                _identifiers = null;
-                return false;
-            }
-
-            if (_identifiers.Length == 0)
-            {
-                _identifiers = null;
-                return false;
-            }
-
-            _sensors = new ISensor[_identifiers.Length];
-            SensorVisitor visitor = new SensorVisitor(sensor =>
-            {
-                for (int i = 0; i < _identifiers.Length; i++)
-                    if (sensor.Identifier.ToString() == _identifiers[i])
-                        _sensors[i] = sensor;
-            });
-            visitor.VisitComputer(_computer);
-            return true;
+            return File.Exists(_fileName);
         }
 
         private void CreateNewLogFile()
         {
-            IList<ISensor> list = new List<ISensor>();
-            SensorVisitor visitor = new SensorVisitor(sensor =>
-            {
-                list.Add(sensor);
-            });
-            visitor.VisitComputer(_computer);
-            _sensors = list.ToArray();
-            _identifiers = _sensors.Select(s => s.Identifier.ToString()).ToArray();
-
             using (StreamWriter writer = new StreamWriter(_fileName, false))
             {
-                writer.Write(",");
-                for (int i = 0; i < _sensors.Length; i++)
-                {
-                    writer.Write(_sensors[i].Identifier);
-                    if (i < _sensors.Length - 1)
-                        writer.Write(",");
-                    else
-                        writer.WriteLine();
-                }
-
-                writer.Write("Time,");
-                for (int i = 0; i < _sensors.Length; i++)
-                {
-                    writer.Write('"');
-                    writer.Write(_sensors[i].Name);
-                    writer.Write('"');
-                    if (i < _sensors.Length - 1)
-                        writer.Write(",");
-                    else
-                        writer.WriteLine();
-                }
             }
         }
 
@@ -183,21 +104,20 @@ namespace LibreHardwareMonitor.Utilities
             {
                 using (StreamWriter writer = new StreamWriter(new FileStream(_fileName, FileMode.Append, FileAccess.Write, FileShare.ReadWrite)))
                 {
-                    writer.Write(now.ToString("G", CultureInfo.InvariantCulture));
-                    writer.Write(",");
-                    for (int i = 0; i < _sensors.Length; i++)
+                    writer.Write($"{{\"time\":\"{DateTimeOffset.UtcNow.ToString("u")}\"");
+                    foreach (var sensor in _sensors)
                     {
-                        if (_sensors[i] != null)
+                        writer.Write($",\"{sensor.Identifier}\":");
+                        if (sensor != null && sensor.Value.HasValue)
                         {
-                            float? value = _sensors[i].Value;
-                            if (value.HasValue)
-                                writer.Write(value.Value.ToString("R", CultureInfo.InvariantCulture));
+                            writer.Write(sensor.Value.Value.ToString("R", CultureInfo.InvariantCulture));
                         }
-                        if (i < _sensors.Length - 1)
-                            writer.Write(",");
                         else
-                            writer.WriteLine();
+                        {
+                            writer.Write("null");
+                        }
                     }
+                    writer.WriteLine("}");
                 }
             }
             catch (IOException) { }
